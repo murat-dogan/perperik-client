@@ -1,42 +1,68 @@
 import { EventEmitter } from 'events';
 import * as ws from 'ws';
+import { nanoid } from 'nanoid';
+import {
+    Message2Client,
+    Message2ClientError,
+    Message2ClientPeer,
+    Message2ClientQuery,
+    Message2ClientWelcome,
+} from './message/message-types';
 
 export declare interface PerperikClient {
     on(event: 'close', listener: (this: WebSocket, code: number, reason: Buffer) => void): this;
     on(event: 'error', listener: (this: WebSocket, err: Error) => void): this;
     on(event: 'open', listener: (this: WebSocket) => void): this;
     on(event: 'server-error', listener: (this: WebSocket, errMsg: string, info: string) => void): this;
-    on(event: 'peer-msg', listener: (this: WebSocket, peerName: string, payload: unknown) => void): this;
+    on(event: 'peer-msg', listener: (this: WebSocket, peerID: string, payload: unknown) => void): this;
 }
 
 export class PerperikClient extends EventEmitter {
     private wsClient: ws;
-    private name = '__UNKNOWN__';
+    private id = '';
+    private timeoutInMS = 5000;
 
-    constructor(serverAddress: string, options?: ws.ClientOptions) {
+    // is-peer-online query cbs
+    private queryIsOnlineCBList: { [index: string]: (err: Error | null, result?: boolean) => void } = {};
+
+    constructor(
+        id: string | null,
+        serverAddress: string,
+        options?: { timeoutInMS: number },
+        wsOptions?: ws.ClientOptions,
+    ) {
         super();
 
-        this.wsClient = new ws(serverAddress, options);
+        // Options
+        if (options) {
+            if (options.timeoutInMS) this.timeoutInMS = options.timeoutInMS;
+        }
+
+        // construct server url
+        let serverUrl = serverAddress;
+        if (!serverUrl.startsWith('ws://') && !serverUrl.startsWith('wss://')) serverUrl = 'ws://' + serverUrl;
+        if (id) serverUrl += `?id=${id}`;
+
+        // create ws
+        console.log(serverUrl);
+        this.wsClient = new ws(serverUrl, wsOptions);
 
         this.wsClient.on('open', () => {
-            console.log('open');
             this.emit('open');
         });
 
         this.wsClient.on('close', (code, reason) => {
-            console.log('close');
             this.emit('close', code, reason);
         });
 
         this.wsClient.on('error', (err) => {
-            console.log(err);
             this.emit('error', err);
         });
 
         this.wsClient.on('message', (data) => {
             console.log(data.toString());
             try {
-                const msg = JSON.parse(data.toString());
+                const msg: Message2Client = JSON.parse(data.toString());
                 if (!msg || !msg.type) {
                     this.emit('error', `Wrong message format. Received: ${JSON.stringify(msg || {})}`);
                     return;
@@ -44,15 +70,19 @@ export class PerperikClient extends EventEmitter {
 
                 switch (msg.type) {
                     case 'welcome':
-                        this.name = msg.clientName;
+                        this.handleWelcomeMessage(msg as Message2ClientWelcome);
                         break;
 
                     case 'server-error':
-                        this.emit('server-error', msg.errMsg, msg.info);
+                        this.handleServerErrorMessage(msg as Message2ClientError);
                         break;
 
                     case 'peer-msg':
-                        this.emit('peer-msg', msg.peerName, msg.payload);
+                        this.handlePeerMessage(msg as Message2ClientPeer);
+                        break;
+
+                    case 'server-query':
+                        this.handleQueryMessage(msg as Message2ClientQuery);
                         break;
 
                     default:
@@ -65,25 +95,85 @@ export class PerperikClient extends EventEmitter {
         });
     }
 
-    getName(): string {
-        return this.name;
+    getId(): string {
+        return this.id;
     }
 
     isOpen(): boolean {
         return this.wsClient.readyState == ws.WebSocket.OPEN;
     }
 
-    sendPeerMessage(peerName: string, payload: unknown): Promise<boolean> {
+    isPeerOnline(peerID: string, cb: (err: Error | null, result?: boolean) => void): void {
+        if (this.wsClient.readyState !== ws.WebSocket.OPEN) {
+            return cb(new Error('Socket does not seem open'));
+        }
+
+        const msg = {
+            type: 'server-query',
+            query: 'is-peer-online',
+            queryRef: nanoid(),
+            peerID,
+        };
+
+        this.wsClient.send(JSON.stringify(msg), (err) => {
+            if (err) return cb(err);
+
+            // save cb for future call
+            this.queryIsOnlineCBList[msg.queryRef] = cb;
+
+            // start timeout counter
+            setTimeout(() => {
+                // if cb not called, call it with error
+                if (this.queryIsOnlineCBList[msg.queryRef]) {
+                    cb(new Error('Timeout'));
+                    delete this.queryIsOnlineCBList[msg.queryRef];
+                }
+            }, this.timeoutInMS);
+        });
+    }
+
+    sendPeerMessage(peerID: string, payload: unknown): Promise<boolean> {
         return new Promise<boolean>((resolve, reject) => {
             if (this.wsClient.readyState !== ws.WebSocket.OPEN) {
                 return reject(new Error('Socket does not seem open'));
             }
 
-            const msg = { type: 'peer-msg', peerName, payload };
+            const msg = { type: 'peer-msg', peerID, payload };
             this.wsClient.send(JSON.stringify(msg), (err) => {
                 if (err) return reject(err);
                 return resolve(true);
             });
         });
+    }
+
+    private handleWelcomeMessage(msg: Message2ClientWelcome): void {
+        this.id = msg.id;
+    }
+
+    private handleServerErrorMessage(msg: Message2ClientError): void {
+        this.emit('server-error', msg.errMsg, msg.info);
+    }
+
+    private handlePeerMessage(msg: Message2ClientPeer): void {
+        this.emit('peer-msg', msg.peerID, msg.payload);
+    }
+
+    private handleQueryMessage(msg: Message2ClientQuery): void {
+        if (!msg.query) {
+            this.emit('error', `Invalid server-query type. Received: ${JSON.stringify(msg)}`);
+            return;
+        }
+
+        switch (msg.query) {
+            case 'is-peer-online':
+                if (msg.queryRef && this.queryIsOnlineCBList[msg.queryRef]) {
+                    this.queryIsOnlineCBList[msg.queryRef](null, msg.result);
+                    delete this.queryIsOnlineCBList[msg.queryRef];
+                }
+                break;
+            default:
+                this.emit('error', `Unknown server-query type. Received: ${JSON.stringify(msg)}`);
+                return;
+        }
     }
 }
