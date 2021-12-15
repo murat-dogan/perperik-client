@@ -1,4 +1,4 @@
-# Perperik
+# perperik
 
 `perperik` is a signaling server that could be useful especially for WebRTC clients.
 
@@ -8,8 +8,10 @@
  * Scalable
  * Lightweight
 
+ For more info please visit: [perperik project page](https://github.com/murat-dogan/perperik)
 
- # Perperik-Client
+
+ # perperik-client
 
  Easy to use perperik client library for NodeJS.
 
