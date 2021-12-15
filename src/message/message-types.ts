@@ -1,5 +1,5 @@
 // This is a copy of perperik server message-types.ts
-// We can generate a seperate lib for that in the future?
+// Can we generate a seperate package for that in the future?
 
 // Message2Server
 export interface Message2Server {

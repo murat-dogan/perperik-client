@@ -7,6 +7,8 @@ import {
     Message2ClientPeer,
     Message2ClientQuery,
     Message2ClientWelcome,
+    Message2ServerPeer,
+    Message2ServerQuery,
 } from './message/message-types';
 
 export declare interface PerperikClient {
@@ -26,7 +28,7 @@ export class PerperikClient extends EventEmitter {
     private queryIsOnlineCBList: { [index: string]: (err: Error | null, result?: boolean) => void } = {};
 
     constructor(
-        id: string | null,
+        id: string | undefined | null,
         serverAddress: string,
         options?: { timeoutInMS: number },
         wsOptions?: ws.ClientOptions,
@@ -44,12 +46,7 @@ export class PerperikClient extends EventEmitter {
         if (id) serverUrl += `?id=${id}`;
 
         // create ws
-        console.log(serverUrl);
         this.wsClient = new ws(serverUrl, wsOptions);
-
-        this.wsClient.on('open', () => {
-            this.emit('open');
-        });
 
         this.wsClient.on('close', (code, reason) => {
             this.emit('close', code, reason);
@@ -60,7 +57,7 @@ export class PerperikClient extends EventEmitter {
         });
 
         this.wsClient.on('message', (data) => {
-            console.log(data.toString());
+            // console.log(data.toString());
             try {
                 const msg: Message2Client = JSON.parse(data.toString());
                 if (!msg || !msg.type) {
@@ -108,7 +105,7 @@ export class PerperikClient extends EventEmitter {
             return cb(new Error('Socket does not seem open'));
         }
 
-        const msg = {
+        const msg: Message2ServerQuery = {
             type: 'server-query',
             query: 'is-peer-online',
             queryRef: nanoid(),
@@ -119,14 +116,14 @@ export class PerperikClient extends EventEmitter {
             if (err) return cb(err);
 
             // save cb for future call
-            this.queryIsOnlineCBList[msg.queryRef] = cb;
+            this.queryIsOnlineCBList[msg.queryRef as string] = cb;
 
             // start timeout counter
             setTimeout(() => {
                 // if cb not called, call it with error
-                if (this.queryIsOnlineCBList[msg.queryRef]) {
+                if (this.queryIsOnlineCBList[msg.queryRef as string]) {
                     cb(new Error('Timeout'));
-                    delete this.queryIsOnlineCBList[msg.queryRef];
+                    delete this.queryIsOnlineCBList[msg.queryRef as string];
                 }
             }, this.timeoutInMS);
         });
@@ -138,7 +135,7 @@ export class PerperikClient extends EventEmitter {
                 return reject(new Error('Socket does not seem open'));
             }
 
-            const msg = { type: 'peer-msg', peerID, payload };
+            const msg: Message2ServerPeer = { type: 'peer-msg', peerID, payload };
             this.wsClient.send(JSON.stringify(msg), (err) => {
                 if (err) return reject(err);
                 return resolve(true);
@@ -146,8 +143,13 @@ export class PerperikClient extends EventEmitter {
         });
     }
 
+    destroy(): void {
+        this.wsClient.terminate();
+    }
+
     private handleWelcomeMessage(msg: Message2ClientWelcome): void {
         this.id = msg.id;
+        this.emit('open');
     }
 
     private handleServerErrorMessage(msg: Message2ClientError): void {
