@@ -11,6 +11,8 @@ import {
     Message2ServerQuery,
 } from './message/message-types';
 
+const DEFAULT_SERVER_URL = 'wss://perperik.fly.dev';
+
 export declare interface PerperikClient {
     on(event: 'close', listener: (this: WebSocket, code: number, reason: Buffer) => void): this;
     on(event: 'error', listener: (this: WebSocket, err: Error) => void): this;
@@ -22,26 +24,23 @@ export declare interface PerperikClient {
 export class PerperikClient extends EventEmitter {
     private wsClient: ws;
     private id = '';
-    private timeoutInMS = 5000;
+    private timeoutInMS: number;
 
     // is-peer-online query cbs
     private queryIsOnlineCBList: { [index: string]: (err: Error | null, result?: boolean) => void } = {};
 
     constructor(
-        id: string | undefined | null,
-        serverAddress: string,
-        options?: { timeoutInMS: number },
+        id?: string | undefined | null,
+        options?: { serverURL?: string; timeoutInMS?: number },
         wsOptions?: ws.ClientOptions,
     ) {
         super();
 
         // Options
-        if (options) {
-            if (options.timeoutInMS) this.timeoutInMS = options.timeoutInMS;
-        }
+        this.timeoutInMS = options && options.timeoutInMS ? options.timeoutInMS : 5000;
 
         // construct server url
-        let serverUrl = serverAddress;
+        let serverUrl = options && options.serverURL ? options.serverURL : DEFAULT_SERVER_URL;
         if (!serverUrl.startsWith('ws://') && !serverUrl.startsWith('wss://')) serverUrl = 'ws://' + serverUrl;
         if (id) serverUrl += `?id=${id}`;
 

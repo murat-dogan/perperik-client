@@ -18,7 +18,7 @@
  Example usage;
  ```js
  import { PerperikClient } from 'perperik-client';
- const client: PerperikClient = new PerperikClient(null, 'ws://localhost:8080');
+ const client: PerperikClient = new PerperikClient();
 
  client.on('open', () => {
     const myId = client.getId();

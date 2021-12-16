@@ -6,7 +6,9 @@ const rl = readline.createInterface({
     output: process.stdout,
 });
 
-const client: PerperikClient = new PerperikClient(process.env.ID, process.env.SERVER_URL || 'wss://localhost:8080');
+const client: PerperikClient = new PerperikClient(process.env.ID, {
+    serverURL: process.env.SERVER_URL || '',
+});
 
 client.on('open', () => {
     const myId = client.getId();
