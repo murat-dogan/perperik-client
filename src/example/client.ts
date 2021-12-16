@@ -41,7 +41,7 @@ client.on('open', () => {
                     });
                     break;
                 default:
-                    client.sendPeerMessage(peerID, str);
+                    client.sendPeerMessage(peerID, { type: 'msg', str });
                     menu(peerID);
             }
         });
@@ -60,6 +60,6 @@ client.on('server-error', (err) => {
     console.log(`[Server Error:`, err, ']');
 });
 
-client.on('peer-msg', (peerID: string, payload: unknown) => {
-    console.log(`${peerID}: ${JSON.stringify(payload)}`);
+client.on('peer-msg', (peerID, payload) => {
+    console.log(`${peerID}: ${(payload as any).str}`);
 });

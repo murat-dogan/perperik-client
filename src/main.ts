@@ -18,7 +18,10 @@ export declare interface PerperikClient {
     on(event: 'error', listener: (this: WebSocket, err: Error) => void): this;
     on(event: 'open', listener: (this: WebSocket) => void): this;
     on(event: 'server-error', listener: (this: WebSocket, errMsg: string, info: string) => void): this;
-    on(event: 'peer-msg', listener: (this: WebSocket, peerID: string, payload: unknown) => void): this;
+    on(
+        event: 'peer-msg',
+        listener: <T extends { type: string }>(this: WebSocket, peerID: string, payload: T) => void,
+    ): this;
 }
 
 export class PerperikClient extends EventEmitter {
@@ -65,24 +68,21 @@ export class PerperikClient extends EventEmitter {
                 }
 
                 switch (msg.type) {
-                    case 'welcome':
+                    case 'pk-welcome':
                         this.handleWelcomeMessage(msg as Message2ClientWelcome);
                         break;
 
-                    case 'server-error':
+                    case 'pk-server-error':
                         this.handleServerErrorMessage(msg as Message2ClientError);
                         break;
 
-                    case 'peer-msg':
-                        this.handlePeerMessage(msg as Message2ClientPeer);
-                        break;
-
-                    case 'server-query':
+                    case 'pk-server-query':
                         this.handleQueryMessage(msg as Message2ClientQuery);
                         break;
 
                     default:
-                        this.emit('error', `Unknown message type. Received: ${JSON.stringify(msg)}`);
+                        // If meesage is not for me than it is a peer msg
+                        this.handlePeerMessage(msg as Message2ClientPeer);
                         return;
                 }
             } catch (err) {
@@ -105,10 +105,10 @@ export class PerperikClient extends EventEmitter {
         }
 
         const msg: Message2ServerQuery = {
-            type: 'server-query',
+            type: 'pk-server-query',
             query: 'is-peer-online',
             queryRef: nanoid(),
-            peerID,
+            id: peerID,
         };
 
         this.wsClient.send(JSON.stringify(msg), (err) => {
@@ -128,13 +128,17 @@ export class PerperikClient extends EventEmitter {
         });
     }
 
-    sendPeerMessage(peerID: string, payload: unknown): Promise<boolean> {
+    sendPeerMessage<T extends { type: string }>(peerID: string, payload: T): Promise<boolean> {
         return new Promise<boolean>((resolve, reject) => {
             if (this.wsClient.readyState !== ws.WebSocket.OPEN) {
                 return reject(new Error('Socket does not seem open'));
             }
 
-            const msg: Message2ServerPeer = { type: 'peer-msg', peerID, payload };
+            if (!payload) {
+                return reject(new Error('Invalid payload '));
+            }
+
+            const msg: Message2ServerPeer = Object.assign(payload, { id: peerID });
             this.wsClient.send(JSON.stringify(msg), (err) => {
                 if (err) return reject(err);
                 return resolve(true);
@@ -156,7 +160,7 @@ export class PerperikClient extends EventEmitter {
     }
 
     private handlePeerMessage(msg: Message2ClientPeer): void {
-        this.emit('peer-msg', msg.peerID, msg.payload);
+        this.emit('peer-msg', msg.id, msg);
     }
 
     private handleQueryMessage(msg: Message2ClientQuery): void {
