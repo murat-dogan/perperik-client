@@ -26,11 +26,11 @@
 
     client.isPeerOnline('PEER_ID', (err, result) => {
         if (err) return console.log(err);
-        if (result) client.sendPeerMessage('PEER_ID', 'Hello World!');
+        if (result) client.sendPeerMessage('PEER_ID', { type: 'msg', str: 'Hello World!' });
     });
 });
 
 client.on('peer-msg', (peerID: string, payload: unknown) => {
-    console.log(`${peerID}: ${JSON.stringify(payload)}`);
+    console.log(`${peerID}: ${(payload as any).str}`);
 });
  ```
