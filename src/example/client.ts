@@ -15,10 +15,10 @@ client.on('open', () => {
     console.log(`# Connection Opened. \nMy ID: ${myId}`);
 
     rl.question('Enter PeerID:', function (peerID) {
-        question(peerID);
+        menu(peerID);
     });
 
-    function question(peerID: string): void {
+    function menu(peerID: string): void {
         rl.question('Message|Query|help: ', function (str) {
             switch (str) {
                 case 'exit':
@@ -29,7 +29,7 @@ client.on('open', () => {
                     console.log('* Write your message to send to peer');
                     console.log('* help: Print this info');
                     console.log('* is-online : Query peer if it is online\n\n');
-                    question(peerID);
+                    menu(peerID);
                     break;
                 case 'is-online':
                     client.isPeerOnline(peerID, (err, result) => {
@@ -37,12 +37,12 @@ client.on('open', () => {
                         else {
                             console.log(result);
                         }
-                        question(peerID);
+                        menu(peerID);
                     });
                     break;
                 default:
                     client.sendPeerMessage(peerID, str);
-                    question(peerID);
+                    menu(peerID);
             }
         });
     }
